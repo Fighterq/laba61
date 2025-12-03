@@ -1,0 +1,101 @@
+name: CI/CD Pipeline for Calculator
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: python:3.9-slim
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build (Check syntax)
+        run: python -m py_compile calculator.py test_calculator.py
+
+  lint:
+    runs-on: ubuntu-latest
+    container: python:3.9-slim
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run pylint
+        run: |
+          pip install pylint
+          pylint calculator.py test_calculator.py --fail-under=8.0 || true
+
+      - name: Save lint report
+        uses: actions/upload-artifact@v3
+        with:
+          name: lint-report
+          path: ./pylint-report.txt
+
+  test:
+    runs-on: ubuntu-latest
+    container: python:3.9-slim
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run unit tests
+        run: |
+          pip install pytest
+          python -m pytest test_calculator.py -v
+
+      - name: Save test report
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-report
+          path: ./test-results.txt
+
+  security:
+    runs-on: ubuntu-latest
+    needs: build
+    # Здесь можно использовать, например, OWASP Dependency-Check,
+    # но для примера просто проверим зависимости через safety
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install safety
+        run: pip install safety
+
+      - name: Scan dependencies
+        run: safety check
+
+  parallel_jobs:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        job: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run ${{ matrix.job }}
+        run: |
+          if [ "${{ matrix.job }}" = "lint" ]; then
+            pip install pylint
+            pylint calculator.py test_calculator.py --fail-under=8.0 || true
+          else
+            pip install pytest
+            python -m pytest test_calculator.py -v
+          fi
